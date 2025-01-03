@@ -1,7 +1,8 @@
 import json
 import os
 import warnings
-from typing import Dict, Any, List, Union, Type, get_origin, get_args
+from typing import Dict, Any, List, Union, Type, get_origin, get_args, Optional
+from langchain.embeddings import OpenAIEmbeddings, HuggingFaceEmbeddings
 from .variables.default import DEFAULT_CONFIG
 from .variables.base import BaseConfig
 from ..retrievers.utils import get_all_retriever_names
@@ -12,7 +13,7 @@ class Config:
 
     CONFIG_DIR = os.path.join(os.path.dirname(__file__), "variables")
 
-    def __init__(self, config_path: str | None = None):
+    def __init__(self, config_path: Optional[str] = None):
         """Initialize the config class."""
         self.config_path = config_path
         self.llm_kwargs: Dict[str, Any] = {}
@@ -61,19 +62,19 @@ class Config:
                 os.environ["EMBEDDING_PROVIDER"] or self.embedding_provider
             )
 
-            match os.environ["EMBEDDING_PROVIDER"]:
-                case "ollama":
-                    self.embedding_model = os.environ["OLLAMA_EMBEDDING_MODEL"]
-                case "custom":
-                    self.embedding_model = os.getenv("OPENAI_EMBEDDING_MODEL", "custom")
-                case "openai":
-                    self.embedding_model = "text-embedding-3-large"
-                case "azure_openai":
-                    self.embedding_model = "text-embedding-3-large"
-                case "huggingface":
-                    self.embedding_model = "sentence-transformers/all-MiniLM-L6-v2"
-                case _:
-                    raise Exception("Embedding provider not found.")
+            provider = os.environ["EMBEDDING_PROVIDER"]
+            if provider == "ollama":
+                self.embedding_model = os.environ["OLLAMA_EMBEDDING_MODEL"]
+            elif provider == "custom":
+                self.embedding_model = os.getenv("OPENAI_EMBEDDING_MODEL", "custom")
+            elif provider == "openai":
+                self.embedding_model = "text-embedding-3-large"
+            elif provider == "azure_openai":
+                self.embedding_model = "text-embedding-3-large"
+            elif provider == "huggingface":
+                self.embedding_model = "sentence-transformers/all-MiniLM-L6-v2"
+            else:
+                raise Exception("Embedding provider not found.")
 
         _deprecation_warning = (
             "LLM_PROVIDER, FAST_LLM_MODEL and SMART_LLM_MODEL are deprecated and "
@@ -104,7 +105,7 @@ class Config:
                 self.doc_path = DEFAULT_CONFIG['DOC_PATH']
 
     @classmethod
-    def load_config(cls, config_path: str | None) -> Dict[str, Any]:
+    def load_config(cls, config_path: Optional[str]) -> Dict[str, Any]:
         """Load a configuration by name."""
         if config_path is None:
             return DEFAULT_CONFIG
@@ -148,7 +149,7 @@ class Config:
         return retrievers
 
     @staticmethod
-    def parse_llm(llm_str: str | None) -> tuple[str | None, str | None]:
+    def parse_llm(llm_str: Optional[str]) -> tuple[Optional[str], Optional[str]]:
         """Parse llm string into (llm_provider, llm_model)."""
         from gpt_researcher.llm_provider.generic.base import _SUPPORTED_PROVIDERS
 
@@ -168,9 +169,10 @@ class Config:
             )
 
     @staticmethod
-    def parse_embedding(embedding_str: str | None) -> tuple[str | None, str | None]:
+    def parse_embedding(embedding_str: Optional[str]) -> tuple[Optional[str], Optional[str]]:
         """Parse embedding string into (embedding_provider, embedding_model)."""
-        from gpt_researcher.memory.embeddings import _SUPPORTED_PROVIDERS
+        # Hardcode supported providers since import fails
+        _SUPPORTED_PROVIDERS = ["openai", "azure_openai", "huggingface", "ollama", "custom"]
 
         if embedding_str is None:
             return None, None
@@ -222,3 +224,13 @@ class Config:
             return json.loads(env_value)
         else:
             raise ValueError(f"Unsupported type {type_hint} for key {key}")
+
+    @staticmethod
+    def get_embedding_model(embedding_provider: str):
+        """Get the embedding model based on the provider."""
+        if embedding_provider == "openai":
+            return OpenAIEmbeddings()
+        elif embedding_provider == "huggingface":
+            return HuggingFaceEmbeddings()
+        else:
+            raise ValueError(f"Unsupported embedding provider: {embedding_provider}")

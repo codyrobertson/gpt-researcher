@@ -9,64 +9,48 @@ def get_retriever(retriever):
 
     Returns:
         retriever: Retriever class
-
     """
-    match retriever:
-        case "google":
-            from gpt_researcher.retrievers import GoogleSearch
-
-            retriever = GoogleSearch
-        case "searx":
-            from gpt_researcher.retrievers import SearxSearch
-
-            retriever = SearxSearch
-        case "searchapi":
-            from gpt_researcher.retrievers import SearchApiSearch
-
-            retriever = SearchApiSearch
-        case "serpapi":
-            from gpt_researcher.retrievers import SerpApiSearch
-
-            retriever = SerpApiSearch
-        case "serper":
-            from gpt_researcher.retrievers import SerperSearch
-
-            retriever = SerperSearch
-        case "duckduckgo":
-            from gpt_researcher.retrievers import Duckduckgo
-
-            retriever = Duckduckgo
-        case "bing":
-            from gpt_researcher.retrievers import BingSearch
-
-            retriever = BingSearch
-        case "arxiv":
-            from gpt_researcher.retrievers import ArxivSearch
-
-            retriever = ArxivSearch
-        case "tavily":
-            from gpt_researcher.retrievers import TavilySearch
-
-            retriever = TavilySearch
-        case "exa":
-            from gpt_researcher.retrievers import ExaSearch
-
-            retriever = ExaSearch
-        case "semantic_scholar":
-            from gpt_researcher.retrievers import SemanticScholarSearch
-
-            retriever = SemanticScholarSearch
-        case "pubmed_central":
-            from gpt_researcher.retrievers import PubMedCentralSearch
-
-            retriever = PubMedCentralSearch
-        case "custom":
-            from gpt_researcher.retrievers import CustomRetriever
-
-            retriever = CustomRetriever
-
-        case _:
-            retriever = None
+    if retriever == "google":
+        from gpt_researcher.retrievers import GoogleSearch
+        retriever = GoogleSearch
+    elif retriever == "searx":
+        from gpt_researcher.retrievers import SearxSearch
+        retriever = SearxSearch
+    elif retriever == "searchapi":
+        from gpt_researcher.retrievers import SearchApiSearch
+        retriever = SearchApiSearch
+    elif retriever == "serpapi":
+        from gpt_researcher.retrievers import SerpApiSearch
+        retriever = SerpApiSearch
+    elif retriever == "serper":
+        from gpt_researcher.retrievers import SerperSearch
+        retriever = SerperSearch
+    elif retriever == "duckduckgo":
+        from gpt_researcher.retrievers import Duckduckgo
+        retriever = Duckduckgo
+    elif retriever == "bing":
+        from gpt_researcher.retrievers import BingSearch
+        retriever = BingSearch
+    elif retriever == "arxiv":
+        from gpt_researcher.retrievers import ArxivSearch
+        retriever = ArxivSearch
+    elif retriever == "tavily":
+        from gpt_researcher.retrievers import TavilySearch
+        retriever = TavilySearch
+    elif retriever == "exa":
+        from gpt_researcher.retrievers import ExaSearch
+        retriever = ExaSearch
+    elif retriever == "semantic_scholar":
+        from gpt_researcher.retrievers import SemanticScholarSearch
+        retriever = SemanticScholarSearch
+    elif retriever == "pubmed_central":
+        from gpt_researcher.retrievers import PubMedCentralSearch
+        retriever = PubMedCentralSearch
+    elif retriever == "custom":
+        from gpt_researcher.retrievers import CustomRetriever
+        retriever = CustomRetriever
+    else:
+        retriever = None
 
     return retriever
 
@@ -103,7 +87,6 @@ def get_retrievers(headers, cfg):
     return [get_retriever(r) or get_default_retriever() for r in retrievers]
 
 
-def get_default_retriever(retriever):
+def get_default_retriever():
     from gpt_researcher.retrievers import TavilySearch
-
     return TavilySearch

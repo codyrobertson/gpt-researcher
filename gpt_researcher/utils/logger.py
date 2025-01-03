@@ -1,7 +1,7 @@
 import logging
 import sys
 from copy import copy
-from typing import Literal
+from typing import Literal, Optional, Union
 
 import click
 
@@ -57,10 +57,10 @@ class ColourizedFormatter(logging.Formatter):
 
     def __init__(
         self,
-        fmt: str | None = None,
-        datefmt: str | None = None,
+        fmt: Optional[str] = None,
+        datefmt: Optional[str] = None,
         style: Literal["%", "{", "$"] = "%",
-        use_colors: bool | None = None,
+        use_colors: Optional[bool] = None,
     ):
         if use_colors in (True, False):
             self.use_colors = use_colors

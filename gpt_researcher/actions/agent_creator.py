@@ -21,7 +21,6 @@ async def choose_agent(
         agent_role_prompt: Agent role prompt
     """
     query = f"{parent_query} - {query}" if parent_query else f"{query}"
-    response = None  # Initialize response to ensure it's defined
 
     try:
         response = await create_chat_completion(
@@ -36,15 +35,29 @@ async def choose_agent(
             cost_callback=cost_callback,
         )
 
+        if not response:
+            raise ValueError("Empty response from LLM")
+
         agent_dict = json.loads(response)
         return agent_dict["server"], agent_dict["agent_role_prompt"]
 
     except Exception as e:
-        print("⚠️ Error in reading JSON, attempting to repair JSON")
-        return await handle_json_error(response)
+        print(f"⚠️ Error in agent creation: {str(e)}")
+        print("Falling back to Default Agent.")
+        return "Default Agent", (
+            "You are an AI critical thinker research assistant. Your sole purpose is to write well written, "
+            "critically acclaimed, objective and structured reports on given text."
+        )
 
 
 async def handle_json_error(response):
+    if not response:
+        print("No response received. Falling back to Default Agent.")
+        return "Default Agent", (
+            "You are an AI critical thinker research assistant. Your sole purpose is to write well written, "
+            "critically acclaimed, objective and structured reports on given text."
+        )
+
     try:
         agent_dict = json_repair.loads(response)
         if agent_dict.get("server") and agent_dict.get("agent_role_prompt"):
@@ -52,15 +65,15 @@ async def handle_json_error(response):
     except Exception as e:
         print(f"Error using json_repair: {e}")
 
-    json_string = extract_json_with_regex(response)
-    if json_string:
-        try:
+    try:
+        json_string = extract_json_with_regex(response)
+        if json_string:
             json_data = json.loads(json_string)
             return json_data["server"], json_data["agent_role_prompt"]
-        except json.JSONDecodeError as e:
-            print(f"Error decoding JSON: {e}")
+    except (TypeError, json.JSONDecodeError) as e:
+        print(f"Error processing JSON: {e}")
 
-    print("No JSON found in the string. Falling back to Default Agent.")
+    print("Falling back to Default Agent.")
     return "Default Agent", (
         "You are an AI critical thinker research assistant. Your sole purpose is to write well written, "
         "critically acclaimed, objective and structured reports on given text."
@@ -68,6 +81,8 @@ async def handle_json_error(response):
 
 
 def extract_json_with_regex(response):
+    if not isinstance(response, (str, bytes)):
+        return None
     json_match = re.search(r"{.*?}", response, re.DOTALL)
     if json_match:
         return json_match.group(0)
