@@ -6,9 +6,9 @@ chief_editor = ChiefEditorAgent({
   "follow_guidelines": False,
   "model": "gpt-4o",
   "guidelines": [
-    "The report MUST be written in APA format",
+    "The report MUST be written in English",
     "Each sub section MUST include supporting sources using hyperlinks. If none exist, erase the sub section or rewrite it to be a part of the previous section",
-    "The report MUST be written in spanish"
+    "The report MUST be written in APA format",
   ],
   "verbose": False
 }, websocket=None, stream_output=None)

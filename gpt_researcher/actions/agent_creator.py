@@ -1,8 +1,13 @@
 import json
 import re
-import json_repair
+import logging
+from openai import RateLimitError, APIError
 from ..utils.llm import create_chat_completion
 from ..prompts import auto_agent_instructions
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 async def choose_agent(
     query, cfg, parent_query=None, cost_callback: callable = None, headers=None
@@ -35,55 +40,68 @@ async def choose_agent(
             cost_callback=cost_callback,
         )
 
+        # Handle empty response
         if not response:
-            raise ValueError("Empty response from LLM")
+            logger.warning("Empty response from LLM, using default agent")
+            return get_default_agent()
 
-        agent_dict = json.loads(response)
-        return agent_dict["server"], agent_dict["agent_role_prompt"]
-
-    except Exception as e:
-        print(f"⚠️ Error in agent creation: {str(e)}")
-        print("Falling back to Default Agent.")
-        return "Default Agent", (
-            "You are an AI critical thinker research assistant. Your sole purpose is to write well written, "
-            "critically acclaimed, objective and structured reports on given text."
-        )
-
-
-async def handle_json_error(response):
-    if not response:
-        print("No response received. Falling back to Default Agent.")
-        return "Default Agent", (
-            "You are an AI critical thinker research assistant. Your sole purpose is to write well written, "
-            "critically acclaimed, objective and structured reports on given text."
-        )
-
-    try:
-        agent_dict = json_repair.loads(response)
-        if agent_dict.get("server") and agent_dict.get("agent_role_prompt"):
+        # Try to parse JSON response
+        try:
+            agent_dict = json.loads(response)
             return agent_dict["server"], agent_dict["agent_role_prompt"]
+        except json.JSONDecodeError:
+            logger.warning("Failed to parse JSON response, trying regex extraction")
+            return await handle_json_error(response)
+
+    except RateLimitError as e:
+        logger.error(f"OpenAI API rate limit exceeded: {str(e)}")
+        return get_default_agent()
+    except APIError as e:
+        logger.error(f"OpenAI API error: {str(e)}")
+        return get_default_agent()
     except Exception as e:
-        print(f"Error using json_repair: {e}")
+        logger.error(f"Error in agent creation: {str(e)}")
+        return get_default_agent()
 
-    try:
-        json_string = extract_json_with_regex(response)
-        if json_string:
-            json_data = json.loads(json_string)
-            return json_data["server"], json_data["agent_role_prompt"]
-    except (TypeError, json.JSONDecodeError) as e:
-        print(f"Error processing JSON: {e}")
-
-    print("Falling back to Default Agent.")
-    return "Default Agent", (
+def get_default_agent():
+    """Returns the default agent configuration"""
+    return "research-agent", (
         "You are an AI critical thinker research assistant. Your sole purpose is to write well written, "
         "critically acclaimed, objective and structured reports on given text."
     )
 
+async def handle_json_error(response):
+    """Handle JSON parsing errors"""
+    try:
+        if not isinstance(response, str):
+            logger.warning("Response is not a string, using default agent")
+            return get_default_agent()
+
+        # Try to extract JSON using regex
+        json_string = extract_json_with_regex(response)
+        if json_string:
+            try:
+                agent_dict = json.loads(json_string)
+                return agent_dict["server"], agent_dict["agent_role_prompt"]
+            except (json.JSONDecodeError, KeyError) as e:
+                logger.error(f"Failed to parse extracted JSON: {str(e)}")
+                return get_default_agent()
+        else:
+            logger.warning("Could not extract JSON from response")
+            return get_default_agent()
+
+    except Exception as e:
+        logger.error(f"Error handling JSON: {str(e)}")
+        return get_default_agent()
 
 def extract_json_with_regex(response):
-    if not isinstance(response, (str, bytes)):
+    """Extract JSON from response using regex"""
+    try:
+        if not isinstance(response, str):
+            return None
+        # Look for JSON-like structure with server and agent_role_prompt
+        json_match = re.search(r'{\s*"server"\s*:.*?"agent_role_prompt"\s*:.*?}', response, re.DOTALL)
+        return json_match.group(0) if json_match else None
+    except Exception as e:
+        logger.error(f"Error extracting JSON: {str(e)}")
         return None
-    json_match = re.search(r"{.*?}", response, re.DOTALL)
-    if json_match:
-        return json_match.group(0)
-    return None
