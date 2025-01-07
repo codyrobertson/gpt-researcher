@@ -1,317 +1,298 @@
 "use client";
 
-import { useRef, useState, useEffect, useCallback } from "react";
-import { useWebSocket } from '@/hooks/useWebSocket';
-import { startLanggraphResearch } from '../components/Langgraph/Langgraph';
-import findDifferences from '../helpers/findDifferences';
-import { Data, ChatBoxSettings, QuestionData } from '../types/data';
-import { preprocessOrderedData } from '../utils/dataProcessing';
-import { ResearchResults } from '../components/ResearchResults';
+import React from 'react';
+import { ResearchInput } from '@/components/ui/research/ResearchInput';
+import { ResearchTaskList } from '@/components/ui/research/ResearchTaskList';
+import { Card } from '@/components/ui/shared/card';
+import { Button } from '@/components/ui/shared/button';
+import { Download, FileText, Maximize2, Settings } from 'lucide-react';
 
-import Header from "@/components/Header";
-import Hero from "@/components/Hero";
-import Footer from "@/components/Footer";
-import InputArea from "@/components/ResearchBlocks/elements/InputArea";
-import HumanFeedback from "@/components/HumanFeedback";
-import LoadingDots from "@/components/LoadingDots";
+interface Task {
+  id: string;
+  title: string;
+  status: 'idle' | 'running' | 'completed' | 'error';
+  progress?: number;
+  message?: string;
+  subtasks?: Task[];
+  date?: string;
+  summary?: string;
+}
 
-export default function Home() {
-  const [promptValue, setPromptValue] = useState("");
-  const [showResult, setShowResult] = useState(false);
-  const [answer, setAnswer] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [chatBoxSettings, setChatBoxSettings] = useState<ChatBoxSettings>({ 
-    report_source: 'web', 
-    report_type: 'research_report', 
-    tone: 'Objective' 
-  });
-  const [question, setQuestion] = useState("");
-  const [orderedData, setOrderedData] = useState<Data[]>([]);
-  const [showHumanFeedback, setShowHumanFeedback] = useState(false);
-  const [questionForHuman, setQuestionForHuman] = useState<true | false>(false);
-  const [allLogs, setAllLogs] = useState<any[]>([]);
-  const chatContainerRef = useRef<HTMLDivElement>(null);
-  const [isStopped, setIsStopped] = useState(false);
-  const [showScrollButton, setShowScrollButton] = useState(false);
-  const mainContentRef = useRef<HTMLDivElement>(null);
+export default function ResearchPage() {
+  const [tasks, setTasks] = React.useState<Task[]>([]);
+  const [isLoading, setIsLoading] = React.useState(false);
+  const [reportType, setReportType] = React.useState('detailed');
+  const [source, setSource] = React.useState('web');
+  const [researchTone, setResearchTone] = React.useState('objective');
+  const [maxSections, setMaxSections] = React.useState(256);
+  const [agentMode, setAgentMode] = React.useState(true);
+  const [followGuidelines, setFollowGuidelines] = React.useState(true);
+  const [verboseLogging, setVerboseLogging] = React.useState(false);
+  const [aiModel, setAiModel] = React.useState('gpt-4');
 
-  const { socket, initializeWebSocket } = useWebSocket(
-    setOrderedData,
-    setAnswer,
-    setLoading,
-    setShowHumanFeedback,
-    setQuestionForHuman
-  );
+  const handleResearchSubmit = async (query: string, files?: FileList) => {
+    setIsLoading(true);
+    try {
+      const newTask: Task = {
+        id: Date.now().toString(),
+        title: query,
+        status: 'running',
+        progress: 0,
+        date: new Date().toLocaleDateString(),
+        summary: 'Initializing research...'
+      };
+      setTasks(prev => [newTask, ...prev]);
 
-  const handleFeedbackSubmit = (feedback: string | null) => {
-    if (socket) {
-      socket.send(JSON.stringify({ type: 'human_feedback', content: feedback }));
-    }
-    setShowHumanFeedback(false);
-  };
+      // Create FormData and append all values
+      const formData = new FormData();
+      formData.append('query', query);
+      formData.append('source', source);
+      formData.append('report_type', reportType);
+      formData.append('research_tone', researchTone);
+      formData.append('max_sections', maxSections.toString());
+      formData.append('agent_mode', String(agentMode));
+      formData.append('follow_guidelines', String(followGuidelines));
+      formData.append('verbose_logging', String(verboseLogging));
+      formData.append('ai_model', aiModel);
 
-  const handleChat = async (message: string) => {
-    if (socket) {
-      setShowResult(true);
-      setQuestion(message);
-      setLoading(true);
-      setPromptValue("");
-      setAnswer("");
-
-      const questionData: QuestionData = { type: 'question', content: message };
-      setOrderedData(prevOrder => [...prevOrder, questionData]);
+      // Append files if they exist
+      if (files) {
+        Array.from(files).forEach(file => {
+          formData.append('files', file);
+        });
+      }
       
-      socket.send(`chat${JSON.stringify({ message })}`);
-    }
-  };
+      const response = await fetch('/api/research', {
+        method: 'POST',
+        body: formData,
+      });
 
-  const handleDisplayResult = async (newQuestion: string) => {
-    setShowResult(true);
-    setLoading(true);
-    setQuestion(newQuestion);
-    setPromptValue("");
-    setAnswer("");
-    setOrderedData((prevOrder) => [...prevOrder, { type: 'question', content: newQuestion }]);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(`Research request failed: ${errorData.detail}`);
+      }
 
-    const storedConfig = localStorage.getItem('apiVariables');
-    const apiVariables = storedConfig ? JSON.parse(storedConfig) : {};
-    const langgraphHostUrl = apiVariables.LANGGRAPH_HOST_URL;
+      // Check if it's a streaming response
+      const contentType = response.headers.get('Content-Type');
+      if (contentType?.includes('text/event-stream')) {
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error('No reader available');
 
-    if (chatBoxSettings.report_type === 'multi_agents' && langgraphHostUrl) {
-      let { streamResponse, host, thread_id } = await startLanggraphResearch(newQuestion, chatBoxSettings.report_source, langgraphHostUrl);
-      const langsmithGuiLink = `https://smith.langchain.com/studio/thread/${thread_id}?baseUrl=${host}`;
-      setOrderedData((prevOrder) => [...prevOrder, { type: 'langgraphButton', link: langsmithGuiLink }]);
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-      let previousChunk = null;
-      for await (const chunk of streamResponse) {
-        if (chunk.data.report != null && chunk.data.report != "Full report content here") {
-          setOrderedData((prevOrder) => [...prevOrder, { ...chunk.data, output: chunk.data.report, type: 'report' }]);
-          setLoading(false);
-        } else if (previousChunk) {
-          const differences = findDifferences(previousChunk, chunk);
-          setOrderedData((prevOrder) => [...prevOrder, { type: 'differences', content: 'differences', output: JSON.stringify(differences) }]);
+          // Decode and parse the chunk
+          const chunk = new TextDecoder().decode(value);
+          const lines = chunk.split('\n').filter(Boolean);
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = JSON.parse(line.slice(6));
+              setTasks(prev => prev.map(task => 
+                task.id === newTask.id 
+                  ? { 
+                      ...task, 
+                      progress: data.progress || task.progress,
+                      message: data.message || task.message,
+                      summary: data.summary || task.summary,
+                      status: data.done ? 'completed' : 'running'
+                    } 
+                  : task
+              ));
+            }
+          }
         }
-        previousChunk = chunk;
+      } else {
+        const data = await response.json();
+        setTasks(prev => prev.map(task => 
+          task.id === newTask.id 
+            ? { 
+                ...task, 
+                status: 'completed', 
+                progress: 100, 
+                message: data.result,
+                summary: data.summary || 'Research completed'
+              } 
+            : task
+        ));
       }
-    } else {
-      initializeWebSocket(newQuestion, chatBoxSettings);
+    } catch (error) {
+      console.error('Research Error:', error);
+      setTasks(prev => prev.map(task => 
+        task.id === tasks[0].id 
+          ? { ...task, status: 'error', message: error.message } 
+          : task
+      ));
+    } finally {
+      setIsLoading(false);
     }
-  };
-
-  const reset = () => {
-    setShowResult(false);
-    setPromptValue("");
-    setQuestion("");
-    setAnswer("");
-  };
-
-  const handleClickSuggestion = (value: string) => {
-    setPromptValue(value);
-    const element = document.getElementById('input-area');
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth' });
-    }
-  };
-
-  /**
-   * Handles stopping the current research
-   * - Closes WebSocket connection
-   * - Stops loading state
-   * - Marks research as stopped
-   * - Preserves current results
-   */
-  const handleStopResearch = () => {
-    if (socket) {
-      socket.close();
-    }
-    setLoading(false);
-    setIsStopped(true);
-  };
-
-  /**
-   * Handles starting a new research
-   * - Clears all previous research data and states
-   * - Resets UI to initial state
-   * - Closes any existing WebSocket connections
-   */
-  const handleStartNewResearch = () => {
-    // Reset UI states
-    setShowResult(false);
-    setPromptValue("");
-    setIsStopped(false);
-    
-    // Clear previous research data
-    setQuestion("");
-    setAnswer("");
-    setOrderedData([]);
-    setAllLogs([]);
-    
-    // Reset feedback states
-    setShowHumanFeedback(false);
-    setQuestionForHuman(false);
-    
-    // Clean up connections
-    if (socket) {
-      socket.close();
-    }
-    setLoading(false);
-  };
-
-  /**
-   * Processes ordered data into logs for display
-   * Updates whenever orderedData changes
-   */
-  useEffect(() => {
-    const groupedData = preprocessOrderedData(orderedData);
-    const statusReports = ["agent_generated", "starting_research", "planning_research"];
-    
-    const newLogs = groupedData.reduce((acc: any[], data) => {
-      // Process accordion blocks (grouped data)
-      if (data.type === 'accordionBlock') {
-        const logs = data.items.map((item: any, subIndex: any) => ({
-          header: item.content,
-          text: item.output,
-          metadata: item.metadata,
-          key: `${item.type}-${item.content}-${subIndex}`,
-        }));
-        return [...acc, ...logs];
-      } 
-      // Process status reports
-      else if (statusReports.includes(data.content)) {
-        return [...acc, {
-          header: data.content,
-          text: data.output,
-          metadata: data.metadata,
-          key: `${data.type}-${data.content}`,
-        }];
-      }
-      return acc;
-    }, []);
-    
-    setAllLogs(newLogs);
-  }, [orderedData]);
-
-  const handleScroll = useCallback(() => {
-    // Calculate if we're near bottom (within 100px)
-    const scrollPosition = window.scrollY + window.innerHeight;
-    const nearBottom = scrollPosition >= document.documentElement.scrollHeight - 100;
-    
-    // Show button if we're not near bottom and page is scrollable
-    const isPageScrollable = document.documentElement.scrollHeight > window.innerHeight;
-    setShowScrollButton(isPageScrollable && !nearBottom);
-  }, []);
-
-  // Add ResizeObserver to watch for content changes
-  useEffect(() => {
-    const resizeObserver = new ResizeObserver(() => {
-      handleScroll();
-    });
-
-    if (mainContentRef.current) {
-      resizeObserver.observe(mainContentRef.current);
-    }
-
-    window.addEventListener('scroll', handleScroll);
-    window.addEventListener('resize', handleScroll);
-    
-    return () => {
-      if (mainContentRef.current) {
-        resizeObserver.unobserve(mainContentRef.current);
-      }
-      resizeObserver.disconnect();
-      window.removeEventListener('scroll', handleScroll);
-      window.removeEventListener('resize', handleScroll);
-    };
-  }, [handleScroll]);
-
-  const scrollToBottom = () => {
-    window.scrollTo({
-      top: document.documentElement.scrollHeight,
-      behavior: 'smooth'
-    });
   };
 
   return (
-    <>
-      <Header 
-        loading={loading}
-        isStopped={isStopped}
-        showResult={showResult}
-        onStop={handleStopResearch}
-        onNewResearch={handleStartNewResearch}
-      />
-      <main ref={mainContentRef} className="min-h-[100vh] pt-[120px]">
-        {!showResult && (
-          <Hero
-            promptValue={promptValue}
-            setPromptValue={setPromptValue}
-            handleDisplayResult={handleDisplayResult}
-          />
-        )}
-
-        {showResult && (
-          <div className="flex h-full w-full grow flex-col justify-between">
-            <div className="container w-full space-y-2">
-              <div className="container space-y-2 task-components">
-                <ResearchResults
-                  orderedData={orderedData}
-                  answer={answer}
-                  allLogs={allLogs}
-                  chatBoxSettings={chatBoxSettings}
-                  handleClickSuggestion={handleClickSuggestion}
-                />
-              </div>
-
-              {showHumanFeedback && (
-                <HumanFeedback
-                  questionForHuman={questionForHuman}
-                  websocket={socket}
-                  onFeedbackSubmit={handleFeedbackSubmit}
-                />
-              )}
-
-              <div className="pt-1 sm:pt-2" ref={chatContainerRef}></div>
+    <div className="flex h-screen">
+      {/* Left Sidebar - Recent Research */}
+      <div className="w-64 border-r bg-background p-4">
+        <h2 className="text-lg font-semibold mb-4">Recent Research</h2>
+        <div className="space-y-4">
+          {tasks.map(task => (
+            <div key={task.id} className="border-b pb-2">
+              <h3 className="font-medium">{task.title}</h3>
+              <p className="text-sm text-muted-foreground">{task.date}</p>
+              <p className="text-sm">{task.summary}</p>
             </div>
-            <div id="input-area" className="container px-4 lg:px-0">
-              {loading ? (
-                <LoadingDots />
-              ) : (
-                <InputArea
-                  promptValue={promptValue}
-                  setPromptValue={setPromptValue}
-                  handleSubmit={handleChat}
-                  handleSecondary={handleDisplayResult}
-                  disabled={loading}
-                  reset={reset}
-                  isStopped={isStopped}
-                />
-              )}
+          ))}
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col">
+        <header className="border-b p-4 flex justify-between items-center">
+          <h1 className="text-xl font-semibold">Research New Topic</h1>
+          <div className="flex items-center gap-4">
+            <Button variant="ghost">Research</Button>
+            <Button variant="ghost">
+              <Settings className="h-4 w-4" />
+            </Button>
+          </div>
+        </header>
+
+        <main className="flex-1 overflow-auto p-4">
+          <div className="max-w-4xl mx-auto">
+            <ResearchInput 
+              onSubmit={handleResearchSubmit} 
+              isLoading={isLoading}
+              source={source}
+            />
+            <ResearchTaskList tasks={tasks} />
+          </div>
+        </main>
+      </div>
+
+      {/* Right Sidebar - Settings */}
+      <div className="w-80 border-l bg-background p-4">
+        <div className="space-y-6">
+          <div>
+            <h3 className="text-sm font-medium mb-2 flex items-center">
+              Report Type
+              <span className="ml-2 text-muted-foreground">ⓘ</span>
+            </h3>
+            <select 
+              className="w-full bg-background border rounded p-2"
+              value={reportType}
+              onChange={(e) => setReportType(e.target.value)}
+            >
+              <option value="detailed">Detailed</option>
+              <option value="summary">Summary</option>
+              <option value="resource">Resource Report</option>
+            </select>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-medium mb-2 flex items-center">
+              AI Model
+              <span className="ml-2 text-muted-foreground">ⓘ</span>
+            </h3>
+            <div className="flex items-center gap-2">
+              <select 
+                className="flex-1 bg-background border rounded p-2"
+                value={aiModel}
+                onChange={(e) => setAiModel(e.target.value)}
+              >
+                <option value="gpt-4">GPT-4o</option>
+                <option value="gpt-3.5">GPT-3.5</option>
+              </select>
+              <span className="px-2 py-1 bg-secondary text-xs rounded">SMART</span>
             </div>
           </div>
-        )}
-      </main>
-      {showScrollButton && showResult && (
-        <button
-          onClick={scrollToBottom}
-          className="fixed bottom-8 right-8 flex items-center justify-center w-12 h-12 text-white bg-[rgb(168,85,247)] rounded-full hover:bg-[rgb(147,51,234)] transform hover:scale-105 transition-all duration-200 shadow-lg z-50"
-        >
-          <svg 
-            xmlns="http://www.w3.org/2000/svg" 
-            className="h-6 w-6" 
-            fill="none" 
-            viewBox="0 0 24 24" 
-            stroke="currentColor"
-          >
-            <path 
-              strokeLinecap="round" 
-              strokeLinejoin="round" 
-              strokeWidth={2} 
-              d="M19 14l-7 7m0 0l-7-7m7 7V3" 
+
+          <div>
+            <h3 className="text-sm font-medium mb-2 flex items-center">
+              Research Tone
+              <span className="ml-2 text-muted-foreground">ⓘ</span>
+            </h3>
+            <div className="flex items-center gap-2">
+              <select 
+                className="flex-1 bg-background border rounded p-2"
+                value={researchTone}
+                onChange={(e) => setResearchTone(e.target.value)}
+              >
+                <option value="objective">Objective</option>
+                <option value="analytical">Analytical</option>
+                <option value="critical">Critical</option>
+                <option value="formal">Formal</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-medium mb-2 flex items-center">
+              Research Sources
+              <span className="ml-2 text-muted-foreground">ⓘ</span>
+            </h3>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span>tavily-ai</span>
+                <span className="text-green-500">✓</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>my local path</span>
+                <Button variant="ghost" size="sm">+</Button>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-medium mb-2 flex items-center">
+              Maximum Sections
+              <span className="ml-2 text-muted-foreground">ⓘ</span>
+            </h3>
+            <input 
+              type="range" 
+              min="1" 
+              max="512"
+              value={maxSections}
+              onChange={(e) => setMaxSections(Number(e.target.value))}
+              className="w-full"
             />
-          </svg>
-        </button>
-      )}
-      <Footer setChatBoxSettings={setChatBoxSettings} chatBoxSettings={chatBoxSettings} />
-    </>
+            <div className="text-right text-sm text-muted-foreground">
+              {maxSections}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="flex items-center justify-between">
+              <span className="text-sm">Agent Mode</span>
+              <input 
+                type="checkbox" 
+                checked={agentMode}
+                onChange={(e) => setAgentMode(e.target.checked)}
+                className="rounded border-gray-300"
+              />
+            </label>
+            
+            <label className="flex items-center justify-between">
+              <span className="text-sm">Follow Guidelines</span>
+              <input 
+                type="checkbox" 
+                checked={followGuidelines}
+                onChange={(e) => setFollowGuidelines(e.target.checked)}
+                className="rounded border-gray-300"
+              />
+            </label>
+            
+            <label className="flex items-center justify-between">
+              <span className="text-sm">Verbose Logging?</span>
+              <input 
+                type="checkbox" 
+                checked={verboseLogging}
+                onChange={(e) => setVerboseLogging(e.target.checked)}
+                className="rounded border-gray-300"
+              />
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

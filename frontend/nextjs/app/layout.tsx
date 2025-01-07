@@ -1,55 +1,24 @@
 import type { Metadata } from "next";
-import { Lexend } from "next/font/google";
-import PlausibleProvider from "next-plausible";
+import { Inter } from "next/font/google";
 import "./globals.css";
+import { Layout } from "@/components/ui/layout/Layout";
 
-const inter = Lexend({ subsets: ["latin"] });
-
-let title = "GPT Researcher";
-let description =
-  "LLM based autonomous agent that conducts local and web research on any topic and generates a comprehensive report with citations.";
-let url = "https://github.com/assafelovic/gpt-researcher";
-let ogimage = "/favicon.ico";
-let sitename = "GPT Researcher";
+const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  metadataBase: new URL(url),
-  title,
-  description,
-  icons: {
-    icon: "/favicon.ico",
-  },
-  openGraph: {
-    images: [ogimage],
-    title,
-    description,
-    url: url,
-    siteName: sitename,
-    locale: "en_US",
-    type: "website",
-  },
-  twitter: {
-    card: "summary_large_image",
-    images: [ogimage],
-    title,
-    description,
-  },
+  title: "GPT Researcher",
+  description: "AI-powered research assistant",
 };
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
-    <html lang="en">
-      <head>
-        <PlausibleProvider domain="localhost:3000" />
-      </head>
-      <body
-        className={`${inter.className} flex min-h-screen flex-col justify-between`}
-      >
-        {children}
+    <html lang="en" className="dark" suppressHydrationWarning>
+      <body className={`${inter.className} bg-background text-foreground`}>
+        <Layout>{children}</Layout>
       </body>
     </html>
   );

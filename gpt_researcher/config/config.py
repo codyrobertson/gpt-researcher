@@ -2,11 +2,14 @@ import json
 import os
 import warnings
 from typing import Dict, Any, List, Union, Type, get_origin, get_args, Optional
-from langchain.embeddings import OpenAIEmbeddings, HuggingFaceEmbeddings
+from langchain_community.embeddings import OpenAIEmbeddings, HuggingFaceEmbeddings
+from dotenv import load_dotenv
 from .variables.default import DEFAULT_CONFIG
 from .variables.base import BaseConfig
 from ..retrievers.utils import get_all_retriever_names
 
+# Load environment variables
+load_dotenv()
 
 class Config:
     """Config class for GPT Researcher."""
